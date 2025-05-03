@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scraper Generalista</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .input-group {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        #url-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        #scrape-btn {
+            padding: 10px 20px;
+            background-color: #0073b1;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #scrape-btn:hover {
+            background-color: #005f8d;
+        }
+        #progress-container {
+            display: none;
+            margin: 20px 0;
+        }
+        #progress-bar {
+            width: 100%;
+            background-color: #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        #progress-fill {
+            height: 20px;
+            background-color: #0073b1;
+            width: 0%;
+            transition: width 0.5s;
+        }
+        #progress-text {
+            text-align: center;
+            margin-top: 5px;
+            color: #333;
+        }
+        .section {
+            margin-top: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            color: #0073b1;
+            margin-top: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #0073b1;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        a {
+            color: #0073b1;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        #pdf-link {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
+        #pdf-link a {
+            color: #0073b1;
+            font-weight: bold;
+        }
+        #error {
+            color: red;
+            text-align: center;
+            display: none;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Scraper Generalista</h1>
+    <div class="container">
+        <div class="input-group">
+            <input type="text" id="url-input" placeholder="Cole a URL para scraping aqui...">
+            <button id="scrape-btn">Iniciar Scraper</button>
+        </div>
+        <div id="error"></div>
+        <div id="progress-container">
+            <div id="progress-bar">
+                <div id="progress-fill"></div>
+            </div>
+            <div id="progress-text">0% - Aguardando início...</div>
+        </div>
+        <div id="results" style="display: none;">
+            <div class="section" id="titles-section">
+                <h2>Títulos</h2>
+                <table id="titles-table">
+                    <thead>
+                        <tr>
+                            <th>Tag</th>
+                            <th>Texto</th>
+                        </tr>
+                    </thead>
+                    <tbody id="titles-list"></tbody>
+                </table>
+            </div>
+            <div class="section" id="paragraphs-section">
+                <h2>Parágrafos</h2>
+                <table id="paragraphs-table">
+                    <thead>
+                        <tr>
+                            <th>Texto</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paragraphs-list"></tbody>
+                </table>
+            </div>
+            <div class="section" id="links-section">
+                <h2>Links</h2>
+                <table id="links-table">
+                    <thead>
+                        <tr>
+                            <th>Texto</th>
+                            <th>URL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="links-list"></tbody>
+                </table>
+            </div>
+            <div class="section" id="lists-section">
+                <h2>Listas</h2>
+                <table id="lists-table">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Itens</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lists-list"></tbody>
+                </table>
+            </div>
+        </div>
+        <div id="pdf-link"></div>
+    </div>
+
+    <script>
+        let progressInterval;
+
+        document.getElementById('scrape-btn').addEventListener('click', () => {
+            const url = document.getElementById('url-input').value;
+            if (!url) {
+                showError('Por favor, insira uma URL válida.');
+                return;
+            }
+
+            // Inicializa interface
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('pdf-link').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            updateProgress(0, 'Aguardando início...');
+
+            // Inicia polling de progresso
+            progressInterval = setInterval(() => {
+                fetch('/progress')
+                    .then(response => response.json())
+                    .then(data => {
+                        updateProgress(data.value, data.message);
+                        if (data.value >= 100) {
+                            clearInterval(progressInterval);
+                        }
+                    })
+                    .catch(() => {
+                        updateProgress(0, 'Erro ao atualizar progresso');
+                    });
+            }, 1000);
+
+            // Executa o scrape
+            fetch('/scrape', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `url=${encodeURIComponent(url)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                clearInterval(progressInterval);
+                updateProgress(100, 'Concluído!');
+                setTimeout(() => {
+                    document.getElementById('progress-container').style.display = 'none';
+                }, 1000);
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                const results = data.results;
+
+                // Títulos
+                const titlesList = document.getElementById('titles-list');
+                titlesList.innerHTML = '';
+                results.titles.forEach(title => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${title.tag}</td>
+                        <td>${title.text}</td>
+                    `;
+                    titlesList.appendChild(row);
+                });
+                document.getElementById('titles-section').style.display = results.titles.length ? 'block' : 'none';
+
+                // Parágrafos
+                const paragraphsList = document.getElementById('paragraphs-list');
+                paragraphsList.innerHTML = '';
+                results.paragraphs.forEach(para => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${para}</td>`;
+                    paragraphsList.appendChild(row);
+                });
+                document.getElementById('paragraphs-section').style.display = results.paragraphs.length ? 'block' : 'none';
+
+                // Links
+                const linksList = document.getElementById('links-list');
+                linksList.innerHTML = '';
+                results.links.forEach(link => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${link.text}</td>
+                        <td><a href="${link.href}" target="_blank">${link.href}</a></td>
+                    `;
+                    linksList.appendChild(row);
+                });
+                document.getElementById('links-section').style.display = results.links.length ? 'block' : 'none';
+
+                // Listas
+                const listsList = document.getElementById('lists-list');
+                listsList.innerHTML = '';
+                results.lists.forEach(lst => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${lst.type}</td>
+                        <td>${lst.items.join('<br>')}</td>
+                    `;
+                    listsList.appendChild(row);
+                });
+                document.getElementById('lists-section').style.display = results.lists.length ? 'block' : 'none';
+
+                // Exibe resultados
+                if (results.titles.length || results.paragraphs.length || results.links.length || results.lists.length) {
+                    document.getElementById('results').style.display = 'block';
+                } else {
+                    showError('Nenhum conteúdo encontrado na página.');
+                }
+
+                // Exibe link do PDF
+                const pdfLink = document.getElementById('pdf-link');
+                pdfLink.innerHTML = `<a href="${data.pdf}" download>Baixar PDF</a>`;
+                pdfLink.style.display = 'block';
+            })
+            .catch(error => {
+                clearInterval(progressInterval);
+                document.getElementById('progress-container').style.display = 'none';
+                showError('Erro ao executar o scraper: ' + error.message);
+            });
+        });
+
+        function updateProgress(value, message) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            progressFill.style.width = `${value}%`;
+            progressText.textContent = `${value}% - ${message}`;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => errorDiv.style.display = 'none', 5000);
+        }
+    </script>
+</body>
+</html>
